@@ -25,7 +25,7 @@ export const redis =
 
 const fastify = Fastify({
   maxParamLength: 1000,
-  logger: true,
+  logger: false,
 });
 export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
 (async () => {
@@ -145,7 +145,7 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
   try {
     fastify.get('/', (_, rp) => {
       rp.status(200).send(
-        `Welcome to consumet api! 🎉 \n${process.env.NODE_ENV === 'DEMO'
+        `ANIME CAST - SCRAPE API 2024 - CSC LAB\n${process.env.NODE_ENV === 'DEMO'
           ? 'This is a demo of the api. You should only use this for testing purposes.'
           : ''
         }`,
