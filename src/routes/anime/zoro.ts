@@ -106,7 +106,15 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   });
 
   fastify.get('/watch', async (request: FastifyRequest, reply: FastifyReply) => {
-    const episodeId = (request.query as { episodeId: string }).episodeId;
+    //const episodeId = (request.query as { episodeId: string }).episodeId;
+    var episodeId = (request.query as { episodeId: string }).episodeId;
+
+    if (episodeId.includes("/watch/")) 
+    {
+      let episodeIdAux = episodeId.replace("/watch/", "");
+      let episodeIdAuxParts = episodeIdAux.split("?ep=");
+      episodeId = episodeIdAuxParts[ 0 ] + "$episode$" + episodeIdAuxParts[ 1 ];
+    }
 
     const server = (request.query as { server: string }).server as StreamingServers;
 
@@ -120,6 +128,26 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       const res = await zoro
         .fetchEpisodeSources(episodeId, server)
         .catch((err) => reply.status(404).send({ message: err }));
+
+      for (let index = 0; index < res.sources.length; index++) {
+        let obj = res.sources[index];
+        if (!obj.hasOwnProperty('quality')) {
+          obj.quality = "AUTO";
+        }else if( obj?.quality !== undefined && obj.quality == "auto" )
+        {
+          obj.quality = "AUTO";
+        }
+      }
+
+      if ( res.subtitles != undefined ) 
+      {
+        for (let index = 0; index < res.subtitles.length; index++) {
+          if ( res.subtitles[ index ].lang == "Thumbnails" ) 
+          {
+            res.subtitles.splice(index, 1);
+          }
+        } 
+      } 
 
       reply.status(200).send(res);
     } catch (err) {
