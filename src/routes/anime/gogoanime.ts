@@ -80,7 +80,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       const obj : IAnimeInfo = {
         id: id,
         title: backup.data?.nombre,
-        url: "https://anitaku.to/category/" + id + "/",
+        url: "https://anitaku.so/category/" + id + "/",
         genres: [],
         episodes: [],
         totalEpisodes: backup.data.episodios.length,
