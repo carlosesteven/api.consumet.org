@@ -4,6 +4,7 @@ import { StreamingServers, IAnimeInfo, SubOrSub, MediaFormat  } from '@consumet/
 import cache from '../../utils/cache';
 import { redis } from '../../main';
 import { Redis } from 'ioredis';
+import axios from 'axios';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   const gogoanime = new ANIME.Gogoanime();
