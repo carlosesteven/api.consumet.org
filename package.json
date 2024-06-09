@@ -23,7 +23,7 @@
     },
     "homepage": "https://github.com/carlosesteven/consumet.ts#readme",
     "dependencies": {
-        "@carlosesteven/extensions": "github:carlosesteven/consumet.ts",
+        "@consumet/extensions": "github:carlosesteven/consumet.ts",
         "@fastify/cors": "^8.2.0",
         "@types/fastify-cors": "^2.1.0",
         "@types/node": "^18.11.17",
