@@ -13,9 +13,25 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
 
   fastify.get('/', (_, rp) => {
     rp.status(200).send({
-      intro:
-        `Welcome to the zoro provider: check out the provider's website @ ${baseUrl}`,
-      routes: ['/:query', '/recent-episodes', '/top-airing', '/most-popular', '/most-favorite', '/latest-completed', '/recent-added', '/info?id', '/watch/:episodeId'],
+      intro: `Welcome to the zoro provider: check out the provider's website @ ${baseUrl}`,
+      routes: [
+        '/:query',
+        '/recent-episodes',
+        '/top-airing',
+        '/most-popular',
+        '/most-favorite',
+        '/latest-completed',
+        '/recent-added',
+        '/info?id',
+        '/watch/:episodeId',
+        '/genre/list',
+        '/genre/:genre',
+        '/movies',
+        '/ona',
+        '/ova',
+        '/specials',
+        '/tv',
+      ],
       documentation: 'https://docs.consumet.org/#tag/zoro',
     });
   });
@@ -106,14 +122,17 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     reply.status(200).send(res);
   });
 
-  fastify.get('/studio/:studioId', async (request: FastifyRequest, reply: FastifyReply) => {
-    const studioId = (request.params as { studioId: string }).studioId;
-    const page = (request.query as { page: number }).page ?? 1;
+  fastify.get(
+    '/studio/:studioId',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const studioId = (request.params as { studioId: string }).studioId;
+      const page = (request.query as { page: number }).page ?? 1;
 
-    const res = await zoro.fetchStudio(studioId, page);
+      const res = await zoro.fetchStudio(studioId, page);
 
-    reply.status(200).send(res);
-  });
+      reply.status(200).send(res);
+    },
+  );
 
   fastify.get('/spotlight', async (request: FastifyRequest, reply: FastifyReply) => {
     const res = await zoro.fetchSpotlight();
@@ -121,14 +140,16 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     reply.status(200).send(res);
   });
 
-  fastify.get('/search-suggestions/:query', async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = (request.params as { query: string }).query;
+  fastify.get(
+    '/search-suggestions/:query',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = (request.params as { query: string }).query;
 
-    const res = await zoro.fetchSearchSuggestions(query);
+      const res = await zoro.fetchSearchSuggestions(query);
 
-    reply.status(200).send(res);
-  });
-
+      reply.status(200).send(res);
+    },
+  );
 
   fastify.get('/info', async (request: FastifyRequest, reply: FastifyReply) => {
     const id = (request.query as { id: string }).id;

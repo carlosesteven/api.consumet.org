@@ -11,7 +11,7 @@ import crunchyroll from './crunchyroll';
 import bilibili from './bilibili';
 import marin from './marin';
 import anix from './anix';
-import animekai from './animekai'; 
+import animekai from './animekai';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   await fastify.register(gogoanime, { prefix: '/gogoanime' });
