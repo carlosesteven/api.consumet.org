@@ -1,7 +1,8 @@
 import { FastifyRequest, FastifyReply, FastifyInstance, RegisterOptions } from 'fastify';
 import { ANIME } from '@consumet/extensions';
-import { StreamingServers, IVideo, SubOrSub } from '@consumet/extensions/dist/models';
+import { StreamingServers, IVideo, ISubtitle, SubOrSub } from '@consumet/extensions/dist/models';
 import axios from 'axios';
+import { log } from 'console';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   const zoro = new ANIME.Zoro(process.env.ZORO_URL);
@@ -232,6 +233,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         } 
       }    
 
+      /*
       if ( res.sources == undefined || res.sources.length == 0 ) 
       {      
         const parts = episodeId.split('$');
@@ -267,6 +269,39 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
             res.sources.push(...links.reverse());
         }
       }
+      */
+
+      console.log("");
+      console.log("");
+
+      var idEpisode = getEpisodeId(episodeId);
+
+      console.log("");
+      console.log("");
+
+      if (idEpisode != null && idEpisode != undefined && idEpisode != "") 
+      {
+        var links = await getMegaplayStreamWithSubtitles(
+          idEpisode
+        );
+
+        if (Array.isArray(links.sources) && links.sources.length > 0) {
+          res.sources.push(...links.sources.reverse());
+          res.headers = res.headers ?? {};
+          res.headers.Referer = "https://megaplay.buzz";
+        }
+
+        if (Array.isArray(links.subtitles) && links.subtitles.length > 0) {
+          res.subtitles?.push(...links.subtitles.reverse());
+          res.headers = res.headers ?? {};
+          res.headers.Referer = "https://megaplay.buzz";
+        }
+
+        console.log("res: ", res);        
+      }
+      
+      console.log("");
+      console.log("");
 
       reply.status(200).send(res);
     } catch (err) {
@@ -296,6 +331,60 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   };
   fastify.get('/watch', watch);
   fastify.get('/watch/:episodeId', watch);
+
+  function getEpisodeId(str: string): string | null {
+    const parts = str.split('$');
+    return parts.length > 2 ? parts[2] : null;
+  }
+
+  async function getMegaplayStreamWithSubtitles(keyEpisodio: string): Promise<any> {
+    const config = {
+      method: 'get',
+      maxBodyLength: Infinity,
+      url: `https://megaplay.buzz/stream/getSources?id=${keyEpisodio}`,
+      headers: { 
+        'Referer': 'https://megaplay.buzz', 
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    };
+  
+    try {
+      const response = await axios.request(config);
+      const file = response.data?.sources?.file;
+      const tracks = response.data?.tracks || [];
+      
+      // Fuente de video
+      const sourcesDetails: IVideo[] = [];
+      if (file) {
+        sourcesDetails.push({
+          url: file,
+          quality: "AUTO",
+          isM3U8: true,
+          type: "hls"
+        });
+      }
+      
+      // Subtítulos
+      const subtitleDetails: ISubtitle[] = tracks
+        .filter((subtitle: any) => subtitle.label)
+        .map((subtitle: any) => ({
+          url: subtitle.file,
+          lang: subtitle.label.replace("CR_", "")
+        }));
+  
+      return {
+        sources: sourcesDetails,
+        subtitles: subtitleDetails,
+      };
+  
+    } catch (error) {
+      // Si hay error, retorna ambos arrays vacíos
+      return {
+        sources: [],
+        subtitles: [],
+      };
+    }
+  }
 
   const watchAux = async (request: FastifyRequest, reply: FastifyReply) => {
     let episodeId = (request.params as { episodeId: string }).episodeId;
@@ -352,6 +441,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         } 
       }    
 
+      /*
       if ( res.sources == undefined || res.sources.length == 0 ) 
       {      
         const parts = episodeId.split('$');
@@ -380,6 +470,39 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
           }
         }
       }
+      */
+
+      console.log("");
+      console.log("");
+
+      var idEpisode = getEpisodeId(episodeId);
+
+      console.log("");
+      console.log("");
+
+      if (idEpisode != null && idEpisode != undefined && idEpisode != "") 
+      {
+        var links = await getMegaplayStreamWithSubtitles(
+          idEpisode
+        );
+
+        if (Array.isArray(links.sources) && links.sources.length > 0) {
+          res.sources.push(...links.sources.reverse());
+          res.headers = res.headers ?? {};
+          res.headers.Referer = "https://megaplay.buzz";
+        }
+
+        if (Array.isArray(links.subtitles) && links.subtitles.length > 0) {
+          res.subtitles?.push(...links.subtitles.reverse());
+          res.headers = res.headers ?? {};
+          res.headers.Referer = "https://megaplay.buzz";
+        }
+
+        console.log("res: ", res);        
+      }
+      
+      console.log("");
+      console.log("");
 
       reply.status(200).send(res);
     } catch (err) {
