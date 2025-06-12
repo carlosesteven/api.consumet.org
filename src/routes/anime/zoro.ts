@@ -357,7 +357,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       const sourcesDetails: IVideo[] = [];
       if (file) {
         sourcesDetails.push({
-          url: file,
+          url: "http://134.209.221.132:3500/proxy?url=" + file,
           quality: "AUTO",
           isM3U8: true,
           type: "hls"
@@ -368,7 +368,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       const subtitleDetails: ISubtitle[] = tracks
         .filter((subtitle: any) => subtitle.label)
         .map((subtitle: any) => ({
-          url: subtitle.file,
+          url: "http://134.209.221.132:3500/proxy?url=" +subtitle.file,
           lang: subtitle.label.replace("CR_", "")
         }));
   
