@@ -5,7 +5,6 @@ import axios from 'axios';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   const zoro = new ANIME.Zoro(process.env.ZORO_URL);
-  const anix = new ANIME.Anix(process.env.ANIX_URL);
   let baseUrl = "https://hianime.to";
   if(process.env.ZORO_URL){
     baseUrl = `https://${process.env.ZORO_URL}`;
@@ -40,9 +39,6 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     const query = (request.params as { query: string }).query;
 
     const page = (request.query as { page: number }).page;
-
-    //let query2 = (request.params as { query: string }).query;
-    //query2 = decodeURIComponent(query.replace(/\+/g, ' ')); // Reemplaza "+" por espacio y decodifica
 
     const res = await zoro.search(
       query,
@@ -234,38 +230,18 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
 
       if ( res.sources == undefined || res.sources.length == 0 ) 
       {      
-        const parts = episodeId.split('$');
-        if ( parts[2] != null && parts[2].length <=3 ) 
+        const parts = episodeId.split('$');        
+        const resAniwatch = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
+        if (resAniwatch != null) 
         {
-          const resAnix = await fetchEpisodeSourcesTemp(parts[0], parts[2]);
-          if (resAnix != null) {
-            res = resAnix;
-          }
-        }else{  
-          const resAniwatch = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
-          if (resAniwatch != null) 
+          res = resAniwatch;
+        }else{
+          const resAniwatchRaw = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
+          if (resAniwatchRaw != null) 
           {
-            res = resAniwatch;
-          }else{
-            const resAniwatchRaw = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
-            if (resAniwatchRaw != null) 
-            {
-              res = resAniwatchRaw;
-            }else{
-              const resAnix = await fetchEpisodeSourcesTemp(parts[0], parts[2]);
-              if (resAnix != null) {
-                res = resAnix;
-              }
-            }        
-          }
-        }
-      }
-
-      if (res && Array.isArray(res.sources) && res.sources.length > 0 && res.sources[0]?.url) {
-        var links = await getM3U8Links(res.sources[0].url);
-        if (Array.isArray(links) && links.length > 0) {
-            res.sources.push(...links.reverse());
-        }
+            res = resAniwatchRaw;
+          }      
+        }        
       }
 
       reply.status(200).send(res);
@@ -296,161 +272,8 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   };
   fastify.get('/watch', watch);
   fastify.get('/watch/:episodeId', watch);
-
-  const watchAux = async (request: FastifyRequest, reply: FastifyReply) => {
-    let episodeId = (request.params as { episodeId: string }).episodeId;
-    if(!episodeId){
-      episodeId = (request.query as { episodeId: string }).episodeId;
-    }
-
-    if (episodeId.includes("/watch/")) 
-    {
-      let episodeIdAux = episodeId.replace("/watch/", "");
-      let episodeIdAuxParts = episodeIdAux.split("?ep=");
-      episodeId = episodeIdAuxParts[ 0 ] + "$episode$" + episodeIdAuxParts[ 1 ];      
-    }    
-
-    const server = (request.query as { server: string }).server as StreamingServers;
-
-    let dub = (request.query as { dub?: string | boolean }).dub;
-    if (dub === 'true' || dub === '1') dub = true;
-    else dub = false;
-
-    dub = episodeId.includes('$dub');
-
-    if (server && !Object.values(StreamingServers).includes(server))
-      return reply.status(400).send({ message: 'server is invalid' });
-
-    if (typeof episodeId === 'undefined')
-      return reply.status(400).send({ message: 'id is required' });
-    
-    try {
-      var res = await zoro
-        .fetchEpisodeSources(
-          episodeId,
-          server,
-          dub === true ? SubOrSub.DUB : SubOrSub.SUB,
-        )    
-
-      for (let index = 0; index < res.sources.length; index++) {
-        let obj = res.sources[index];
-        if (!obj.hasOwnProperty('quality')) {
-          obj.quality = "AUTO";
-        }else if( obj?.quality !== undefined && obj.quality == "auto" )
-        {
-          obj.quality = "AUTO";
-        }
-      }
-
-      if ( res.subtitles != null ) 
-      {
-        for (let index = 0; index < res.subtitles.length; index++) {
-          if ( res.subtitles[ index ].lang == "Thumbnails" || res.subtitles[ index ].lang == "thumbnails" ) 
-          {
-            res.subtitles.splice(index, 1);
-          }
-        } 
-      }    
-
-      if ( res.sources == undefined || res.sources.length == 0 ) 
-      {      
-        const parts = episodeId.split('$');
-        if ( parts[2] != null && parts[2].length <=3 ) 
-        {
-          const resAnix = await fetchEpisodeSourcesTemp(parts[0], parts[2]);
-          if (resAnix != null) {
-            res = resAnix;
-          }
-        }else{  
-          const resAniwatch = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
-          if (resAniwatch != null) 
-          {
-            res = resAniwatch;
-          }else{
-            const resAniwatchRaw = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
-            if (resAniwatchRaw != null) 
-            {
-              res = resAniwatchRaw;
-            }else{
-              const resAnix = await fetchEpisodeSourcesTemp(parts[0], parts[2]);
-              if (resAnix != null) {
-                res = resAnix;
-              }
-            }        
-          }
-        }
-      }
-
-      reply.status(200).send(res);
-    } catch (err) {
-      const parts = episodeId.split('$');
-      try {
-        const data = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
-        if (data != null) 
-        {
-          reply.status(200).send(data);  // Solo se envía la respuesta cuando tenemos los datos 
-        }else{
-          try {
-            const data = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
-            if (data != null) 
-            {
-              reply.status(200).send(data);  // Solo se envía la respuesta cuando tenemos los datos 
-            }else{
-              reply.status(500).send({});
-            }
-          } catch (error) {
-            reply.status(500).send({ message: 'Something went wrong. Contact developer for help.' });
-          }
-        }
-      } catch (error) {
-        reply.status(500).send({ message: 'Something went wrong. Contact developer for help.' });
-      }
-    }
-  };
-  fastify.get('/watch_aux', watchAux);
-  fastify.get('/watch_aux/:episodeId', watchAux);
-
-  async function getM3U8Links(url: string): Promise<IVideo[]> {
-    try {
-        const response = await axios.get(url);
-        const data: string = response.data;
-        const baseUrl = url.substring(0, url.lastIndexOf("/") + 1);
-        const lines = data.split("\n");
-        const streams: IVideo[] = [];
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].startsWith("#EXT-X-STREAM-INF")) {
-                const resolutionMatch = lines[i].match(/RESOLUTION=(\d+)x(\d+)/);
-                const quality = resolutionMatch ? `${resolutionMatch[2]}p` : "UNKNOWN";
-                const nextLine = lines[i + 1]?.trim();
-                if (nextLine && nextLine.endsWith(".m3u8")) {
-                  streams.push({
-                      url: baseUrl + nextLine,
-                      quality: quality,
-                      isM3U8: true,
-                      type: "hls"
-                  });
-                }
-            }
-        }
-        return streams;
-    } catch (error) {
-        console.error("Error al obtener los enlaces:", error);
-        return [];
-    }
-  }
-
-  function getNameFromZoroId(input: string): string {
-    if (input == "ranma-1-2-19335") {
-      return "Ranma ½ (2024)";
-    }
-    const formattedString = input.replace(/-|\d+/g, ' ');
-    return formattedString.trim();
-  }
-
-  function containsSubstring(mainString: string, subString: string): boolean {
-      const cleanedMainString = mainString.replace(/[:?]/g, '');
-      return cleanedMainString.toLowerCase().includes(subString.toLowerCase());
-  }
+  fastify.get('/watch_aux', watch);
+  fastify.get('/watch_aux/:episodeId', watch);
 
   const fetchEpisodeSources = async (animeEpisodeId: string, episodeId: string, raw : Boolean, category : string): Promise<any> => {    
     try {
@@ -533,108 +356,6 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       return null;
     }
   };
-
-  const fetchEpisodeSourcesTemp = async (animeName: string, episodeId: string): Promise<any> => {
-    try {
-
-      const searchName = getNameFromZoroId(
-        animeName
-      );
-      
-      const search = await anix.search(
-        searchName
-      );
-
-      console.log("\n - - -");
-
-      console.log("\nanimeSlug: " + animeName);
-
-      console.log("\nanimeName: " + searchName);
-      
-      console.log("\nepisodeId: " + episodeId);
-
-      if (search != null && search.results && search.results.length > 0) {
-        var animeId = search.results[0].id;        
-        search.results.forEach(element => {
-          var searchAnimeRawName = element.title.toString().trim();
-          var searchAnimeEnName = element.englishTitle.toString().trim();
-          if ( searchAnimeRawName != null && searchAnimeRawName != undefined && searchAnimeRawName != "" ) {
-            searchAnimeRawName = searchAnimeRawName.replace("½", "1/2");
-          }
-          if ( searchAnimeEnName != null && searchAnimeEnName != undefined && searchAnimeEnName != "" ) {
-            searchAnimeEnName = searchAnimeEnName.replace("½", "1/2");
-          }
-          console.log(
-            "\nsearch.title-raw:", searchAnimeRawName
-          );     
-          console.log(
-            "\nsearch.title-english:", searchAnimeEnName
-          );              
-          if ( containsSubstring(searchAnimeRawName, searchName) || containsSubstring(searchAnimeEnName, searchName) ) {
-            animeId = element.id.trim();
-            console.log(
-              "\nsearch.encontro:", element
-            ); 
-          }     
-        });
-
-        console.log("\nanimeId: " + animeId);
-
-        if (animeId != undefined && animeId != "") {
-          const info = await anix.fetchAnimeInfo(
-            animeId
-          );
-
-          console.log("\ninfo.episodes: ", info.episodes);
-
-          var episodeKey = "";
-
-          if (info.episodes && info.episodes.length > 0) {
-            info.episodes.forEach((item: any) => {
-              if (episodeId == item.number) {
-                episodeKey = item.id.trim();
-                console.log("\nepisodeKey:", episodeKey);
-              }
-            });
-          }
-
-          if ( episodeKey != "") 
-          {
-            const episode = await anix.fetchEpisodeSources(
-              animeId,
-              episodeKey
-            );
-
-            console.log("\nepisode: ", episode);
-
-            if (episode.sources && episode.sources.length > 0) {        
-              const sourcesDetails = episode.sources.map((source: any) => ({
-                url: source.url,  // Extraemos la URL
-                type: "hls",  // Tipo de fuente (puede ser 'hls', etc.)
-                quality: "AUTO",  // Calidad de la fuente
-                isM3U8: true  // Si es un archivo M3U8
-              }));
-              const obj = {
-                sources: sourcesDetails,  // Todos los detalles de las fuentes
-                subtitles: [],  // Todos los detalles de los subtítulos
-                intro: {},  // URL de la intro
-                outro: {},  // URL del outro
-              };
-              return obj;  
-            }        
-          }
-        }
-      }
-      
-      console.log("\n - - -");
-     return null;
-    } catch (error) {
-      console.error("Error (fetchEpisodeSources):", error);
-      return null;
-    }
-  };
-
-
 };
 
 export default routes;
