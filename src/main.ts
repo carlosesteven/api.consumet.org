@@ -15,6 +15,8 @@ import news from './routes/news';
 import chalk from 'chalk';
 import Utils from './utils';
 
+import path from 'path';
+
 export const redis =
   process.env.REDIS_HOST &&
   new Redis({
@@ -143,13 +145,15 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
   await fastify.register(Utils, { prefix: '/utils' });
 
   try {
-    fastify.get('/', (_, rp) => {
-      rp.status(200).send(
-        `CSC LAB - SCRAPE - ANIME CAST\n${process.env.NODE_ENV === 'DEMO'
-          ? 'This is a demo of the api. You should only use this for testing purposes.'
-          : ''
-        }`,
-      );
+    fastify.get('/', async (_, reply) => {
+      try {
+        const filePath = path.join(__dirname, '../public/index.html');
+        const html = fs.readFileSync(filePath, 'utf8');
+        return reply.type('text/html; charset=utf-8').send(html);
+      } catch (err) {
+        console.error('Error loading index.html:', err);
+        return reply.status(500).send('Error loading homepage');
+      }
     });
     fastify.get('*', (request, reply) => {
       reply.status(404).send({
