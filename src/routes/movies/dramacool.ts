@@ -2,14 +2,24 @@ import { FastifyRequest, FastifyReply, FastifyInstance, RegisterOptions } from '
 import { MOVIES } from '@consumet/extensions';
 import { StreamingServers } from '@consumet/extensions/dist/models';
 
+import cache from '../../utils/cache';
+import { redis, REDIS_TTL } from '../../main';
+import { Redis } from 'ioredis';
+
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   const dramacool = new MOVIES.DramaCool();
 
   fastify.get('/', (_, rp) => {
     rp.status(200).send({
-      intro:
-        "Welcome to the dramacool provider: check out the provider's website @ https://dramacool.com.pa/",
-      routes: ['/:query', '/info', '/watch', '/popular','/recent-movies', '/recent-shows'],
+      intro: `Welcome to the dramacool provider: check out the provider's website @ ${dramacool.toString.baseUrl}`,
+      routes: [
+        '/:query',
+        '/info',
+        '/watch',
+        '/popular',
+        '/recent-movies',
+        '/recent-shows',
+      ],
       documentation: 'https://docs.consumet.org/#tag/dramacool',
     });
   });
@@ -17,11 +27,17 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   fastify.get('/:query', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const query = decodeURIComponent((request.params as { query: string }).query);
-  
       const page = (request.query as { page: number }).page;
-  
-      const res = await dramacool.search(query, page);
-  
+
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:${query}:${page}`,
+            async () => await dramacool.search(query, page),
+            REDIS_TTL,
+          )
+        : await dramacool.search(query, page);
+
       reply.status(200).send(res);
     } catch (err) {
       reply.status(500).send({
@@ -40,9 +56,14 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       });
 
     try {
-      const res = await dramacool
-        .fetchMediaInfo(id)
-        .catch((err) => reply.status(404).send({ message: err }));
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:info:${id}`,
+            async () => await dramacool.fetchMediaInfo(id),
+            REDIS_TTL,
+          )
+        : await dramacool.fetchMediaInfo(id);
 
       reply.status(200).send(res);
     } catch (err) {
@@ -55,15 +76,20 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
 
   fastify.get('/watch', async (request: FastifyRequest, reply: FastifyReply) => {
     const episodeId = (request.query as { episodeId: string }).episodeId;
-    // const mediaId = (request.query as { mediaId: string }).mediaId;
     const server = (request.query as { server: StreamingServers }).server;
 
     if (typeof episodeId === 'undefined')
       return reply.status(400).send({ message: 'episodeId is required' });
+
     try {
-      const res = await dramacool
-        .fetchEpisodeSources(episodeId,server)
-        .catch((err) => reply.status(404).send({ message: 'Media Not found.' }));
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:watch:${episodeId}:${server}`,
+            async () => await dramacool.fetchEpisodeSources(episodeId, server),
+            REDIS_TTL,
+          )
+        : await dramacool.fetchEpisodeSources(episodeId, server);
 
       reply.status(200).send(res);
     } catch (err) {
@@ -73,41 +99,65 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     }
   });
 
-  fastify.get("/popular", async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/popular', async (request: FastifyRequest, reply: FastifyReply) => {
     const page = (request.query as { page: number }).page;
     try {
-      const res = await dramacool.fetchPopular(page ? page : 1);
-      reply.status(200).send(res);
-    } catch (err) {
-      reply
-        .status(500)
-        .send({ message: 'Something went wrong. Please try again later.' });
-    }
-  })
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:popular:${page}`,
+            async () => await dramacool.fetchPopular(page ? page : 1),
+            REDIS_TTL,
+          )
+        : await dramacool.fetchPopular(page ? page : 1);
 
-  fastify.get("/recent-movies", async (request: FastifyRequest, reply: FastifyReply) => {
-    const page = (request.query as { page: number }).page;
-    try {
-      const res = await dramacool.fetchRecentMovies(page ? page : 1);
       reply.status(200).send(res);
     } catch (err) {
       reply
         .status(500)
         .send({ message: 'Something went wrong. Please try again later.' });
     }
-  })
+  });
 
-  fastify.get("/recent-shows", async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/recent-movies', async (request: FastifyRequest, reply: FastifyReply) => {
     const page = (request.query as { page: number }).page;
     try {
-      const res = await dramacool.fetchRecentTvShows(page ? page : 1);
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:recent-movies:${page}`,
+            async () => await dramacool.fetchRecentMovies(page ? page : 1),
+            REDIS_TTL,
+          )
+        : await dramacool.fetchRecentMovies(page ? page : 1);
+
       reply.status(200).send(res);
     } catch (err) {
       reply
         .status(500)
         .send({ message: 'Something went wrong. Please try again later.' });
     }
-  })
+  });
+
+  fastify.get('/recent-shows', async (request: FastifyRequest, reply: FastifyReply) => {
+    const page = (request.query as { page: number }).page;
+    try {
+      let res = redis
+        ? await cache.fetch(
+            redis as Redis,
+            `dramacool:recent-shows:${page}`,
+            async () => await dramacool.fetchRecentTvShows(page ? page : 1),
+            REDIS_TTL,
+          )
+        : await dramacool.fetchRecentTvShows(page ? page : 1);
+
+      reply.status(200).send(res);
+    } catch (err) {
+      reply
+        .status(500)
+        .send({ message: 'Something went wrong. Please try again later.' });
+    }
+  });
 };
 
 export default routes;

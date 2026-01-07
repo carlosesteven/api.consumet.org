@@ -7,11 +7,11 @@ import { redis, REDIS_TTL } from '../../main';
 import { Redis } from 'ioredis';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
-  const goku = new MOVIES.Goku();
+  const himovies = new MOVIES.HiMovies();
 
   fastify.get('/', (_, rp) => {
     rp.status(200).send({
-      intro: `Welcome to the goku provider: check out the provider's website @ ${goku.toString.baseUrl}`,
+      intro: `Welcome to the himovies provider: check out the provider's website @ ${himovies.toString.baseUrl}`,
       routes: [
         '/:query',
         '/info',
@@ -23,7 +23,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         '/country',
         '/genre',
       ],
-      documentation: 'https://docs.consumet.org/#tag/goku',
+      documentation: 'https://docs.consumet.org/#tag/himovies',
     });
   });
 
@@ -35,11 +35,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     let res = redis
       ? await cache.fetch(
           redis as Redis,
-          `goku:${query}:${page}`,
-          async () => await goku.search(query, page ? page : 1),
+          `himovies:${query}:${page}`,
+          async () => await himovies.search(query, page ? page : 1),
           REDIS_TTL,
         )
-      : await goku.search(query, page ? page : 1);
+      : await himovies.search(query, page ? page : 1);
 
     reply.status(200).send(res);
   });
@@ -48,11 +48,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     let res = redis
       ? await cache.fetch(
           redis as Redis,
-          `goku:recent-shows`,
-          async () => await goku.fetchRecentTvShows(),
+          `himovies:recent-shows`,
+          async () => await himovies.fetchRecentTvShows(),
           REDIS_TTL,
         )
-      : await goku.fetchRecentTvShows();
+      : await himovies.fetchRecentTvShows();
 
     reply.status(200).send(res);
   });
@@ -61,11 +61,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     let res = redis
       ? await cache.fetch(
           redis as Redis,
-          `goku:recent-movies`,
-          async () => await goku.fetchRecentMovies(),
+          `himovies:recent-movies`,
+          async () => await himovies.fetchRecentMovies(),
           REDIS_TTL,
         )
-      : await goku.fetchRecentMovies();
+      : await himovies.fetchRecentMovies();
 
     reply.status(200).send(res);
   });
@@ -76,8 +76,8 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       if (!type) {
         const res = {
           results: [
-            ...(await goku.fetchTrendingMovies()),
-            ...(await goku.fetchTrendingTvShows()),
+            ...(await himovies.fetchTrendingMovies()),
+            ...(await himovies.fetchTrendingTvShows()),
           ],
         };
         return reply.status(200).send(res);
@@ -86,16 +86,16 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       let res = redis
         ? await cache.fetch(
             redis as Redis,
-            `goku:trending:${type}`,
+            `himovies:trending:${type}`,
             async () =>
               type === 'tv'
-                ? await goku.fetchTrendingTvShows()
-                : await goku.fetchTrendingMovies(),
+                ? await himovies.fetchTrendingTvShows()
+                : await himovies.fetchTrendingMovies(),
             REDIS_TTL,
           )
         : type === 'tv'
-          ? await goku.fetchTrendingTvShows()
-          : await goku.fetchTrendingMovies();
+          ? await himovies.fetchTrendingTvShows()
+          : await himovies.fetchTrendingMovies();
 
       reply.status(200).send(res);
     } catch (error) {
@@ -118,11 +118,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       let res = redis
         ? await cache.fetch(
             redis as Redis,
-            `goku:info:${id}`,
-            async () => await goku.fetchMediaInfo(id),
+            `himovies:info:${id}`,
+            async () => await himovies.fetchMediaInfo(id),
             REDIS_TTL,
           )
-        : await goku.fetchMediaInfo(id);
+        : await himovies.fetchMediaInfo(id);
 
       reply.status(200).send(res);
     } catch (err) {
@@ -137,6 +137,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     const episodeId = (request.query as { episodeId: string }).episodeId;
     const mediaId = (request.query as { mediaId: string }).mediaId;
     const server = (request.query as { server: StreamingServers }).server;
+
     if (typeof episodeId === 'undefined')
       return reply.status(400).send({ message: 'episodeId is required' });
     if (typeof mediaId === 'undefined')
@@ -149,11 +150,12 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       let res = redis
         ? await cache.fetch(
             redis as Redis,
-            `goku:watch:${episodeId}:${mediaId}:${server}`,
-            async () => await goku.fetchEpisodeSources(episodeId, mediaId, server),
+            `himovies:watch:${episodeId}:${mediaId}:${server}`,
+            async () => await himovies.fetchEpisodeSources(episodeId, mediaId, server),
             REDIS_TTL,
           )
-        : await goku.fetchEpisodeSources(episodeId, mediaId, StreamingServers.VidCloud);
+        : await himovies.fetchEpisodeSources(episodeId, mediaId, server);
+
       reply.status(200).send(res);
     } catch (err) {
       reply
@@ -175,11 +177,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       let res = redis
         ? await cache.fetch(
             redis as Redis,
-            `goku:servers:${episodeId}:${mediaId}`,
-            async () => await goku.fetchEpisodeServers(episodeId, mediaId),
+            `himovies:servers:${episodeId}:${mediaId}`,
+            async () => await himovies.fetchEpisodeServers(episodeId, mediaId),
             REDIS_TTL,
           )
-        : await goku.fetchEpisodeServers(episodeId, mediaId);
+        : await himovies.fetchEpisodeServers(episodeId, mediaId);
 
       reply.status(200).send(res);
     } catch (error) {
@@ -199,11 +201,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         let res = redis
           ? await cache.fetch(
               redis as Redis,
-              `goku:country:${country}:${page}`,
-              async () => await goku.fetchByCountry(country, page),
+              `himovies:country:${country}:${page}`,
+              async () => await himovies.fetchByCountry(country, page),
               REDIS_TTL,
             )
-          : await goku.fetchByCountry(country, page);
+          : await himovies.fetchByCountry(country, page);
 
         reply.status(200).send(res);
       } catch (error) {
@@ -222,11 +224,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       let res = redis
         ? await cache.fetch(
             redis as Redis,
-            `goku:genre:${genre}:${page}`,
-            async () => await goku.fetchByGenre(genre, page),
+            `himovies:genre:${genre}:${page}`,
+            async () => await himovies.fetchByGenre(genre, page),
             REDIS_TTL,
           )
-        : await goku.fetchByGenre(genre, page);
+        : await himovies.fetchByGenre(genre, page);
 
       reply.status(200).send(res);
     } catch (error) {
@@ -237,5 +239,4 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     }
   });
 };
-
 export default routes;

@@ -3,8 +3,6 @@ import { META } from '@consumet/extensions';
 import { PROVIDERS_LIST } from '@consumet/extensions';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
-  // TODO: Allocate new provider per request rather
-  // than global
   let anilist = new META.Anilist.Manga();
 
   fastify.get('/', (_, rp) => {
@@ -68,6 +66,34 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     try {
       const res = await anilist
         .fetchChapterPages(chapterId)
+        .catch((err: Error) => reply.status(404).send({ message: err.message }));
+
+      anilist = new META.Anilist.Manga();
+      reply.status(200).send(res);
+    } catch (err) {
+      reply
+        .status(500)
+        .send({ message: 'Something went wrong. Please try again later.' });
+    }
+  });
+
+  fastify.get('/chapters/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    const id = (request.params as { id: string }).id;
+    const provider = (request.query as { provider: string }).provider;
+
+    if (typeof provider !== 'undefined') {
+      const possibleProvider = PROVIDERS_LIST.MANGA.find(
+        (p) => p.name.toLowerCase() === provider.toLocaleLowerCase(),
+      );
+      anilist = new META.Anilist.Manga(possibleProvider);
+    }
+
+    if (typeof id === 'undefined')
+      return reply.status(400).send({ message: 'id is required' });
+
+    try {
+      const res = await anilist
+        .fetchChaptersList(id)
         .catch((err: Error) => reply.status(404).send({ message: err.message }));
 
       anilist = new META.Anilist.Manga();
