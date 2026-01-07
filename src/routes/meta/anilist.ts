@@ -276,7 +276,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
 
     let anilist = generateAnilistMeta(provider);
 
-    console.log("\n- provider: ", provider);
+    console.log("\n- Provider: ", provider);
 
     if (isDub === 'true' || isDub === '1') isDub = true;
     else isDub = false;
