@@ -466,11 +466,8 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     },
   );
 
-  fastify.get(
-    '/recently-updated',
-    async (request: FastifyRequest, reply: FastifyReply) => {
+  const recentEpisodes = async (request: FastifyRequest, reply: FastifyReply) => {
       const page = (request.query as { page: number }).page;
-
       try {
         let res = redis
           ? await cache.fetch(
@@ -480,14 +477,22 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
               REDIS_TTL,
             )
           : await hianime.fetchRecentlyUpdated(page);
-
         reply.status(200).send(res);
       } catch (err) {
         reply
           .status(500)
           .send({ message: 'Something went wrong. Contact developer for help.' });
       }
-    },
+    };
+
+  fastify.get(
+    '/recently-updated',
+    recentEpisodes
+  );
+
+  fastify.get(
+    '/recent-episodes',
+    recentEpisodes
   );
 
   fastify.get('/recently-added', async (request: FastifyRequest, reply: FastifyReply) => {
