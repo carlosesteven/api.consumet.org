@@ -6,6 +6,8 @@ import cache from '../../utils/cache';
 import { redis, REDIS_TTL } from '../../main';
 import { Redis } from 'ioredis';
 
+import axios from 'axios';
+
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   const hianime = new ANIME.Hianime();
 
@@ -80,6 +82,13 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
           )
         : await hianime.fetchAnimeInfo(id);
 
+      if (res && Array.isArray(res.episodes)) {
+        res.episodes = res.episodes.map((episode) => ({
+            ...episode,
+            id: episode.id.endsWith("$both") ? episode.id : `${episode.id}$both`
+        }));
+      }
+
       reply.status(200).send(res);
     } catch (err) {
       reply
@@ -88,12 +97,30 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     }
   });
 
-  fastify.get(
-    '/watch/:episodeId',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const episodeId = (request.params as { episodeId: string }).episodeId;
+  const watch = async (request: FastifyRequest, reply: FastifyReply) => {
+      let episodeId = (request.params as { episodeId: string }).episodeId;
+
+      if(!episodeId){
+        episodeId = (request.query as { episodeId: string }).episodeId;
+      }
+
+      if (episodeId.includes("/watch/")) 
+      {
+        let episodeIdAux = episodeId.replace("/watch/", "");
+        let episodeIdAuxParts = episodeIdAux.split("?ep=");
+        episodeId = episodeIdAuxParts[ 0 ] + "$episode$" + episodeIdAuxParts[ 1 ];      
+      }
+
       const server = (request.query as { server: StreamingServers }).server;
-      const category = (request.query as { category: SubOrSub }).category;
+      let category = (request.query as { category: SubOrSub }).category;
+
+      let dub = (request.query as { dub?: string | boolean }).dub;
+      if (dub === 'true' || dub === '1') dub = true;
+      else dub = false;
+
+      dub = episodeId.includes('$dub');
+
+      category = dub === true ? SubOrSub.DUB : SubOrSub.SUB
 
       if (typeof episodeId === 'undefined')
         return reply.status(400).send({ message: 'episodeId is required' });
@@ -108,14 +135,73 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
             )
           : await hianime.fetchEpisodeSources(episodeId, server, category);
 
+        for (let index = 0; index < res.sources.length; index++) {
+          let obj = res.sources[index];
+          if (!obj.hasOwnProperty('quality')) {
+            obj.quality = "AUTO";
+          }else if( obj?.quality !== undefined && obj.quality == "auto" )
+          {
+            obj.quality = "AUTO";
+          }
+        }
+
+        if ( res.subtitles != null ) 
+        {
+          for (let index = 0; index < res.subtitles.length; index++) {
+            if ( res.subtitles[ index ].lang == "Thumbnails" || res.subtitles[ index ].lang == "thumbnails" ) 
+            {
+              res.subtitles.splice(index, 1);
+            }
+          } 
+        }    
+
+        if ( res.sources == undefined || res.sources.length == 0 ) 
+        {      
+          const parts = episodeId.split('$');        
+          const resAniwatch = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
+          if (resAniwatch != null) 
+          {
+            res = resAniwatch;
+          }else{
+            const resAniwatchRaw = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
+            if (resAniwatchRaw != null) 
+            {
+              res = resAniwatchRaw;
+            }      
+          }        
+        }
+
         reply.status(200).send(res);
       } catch (err) {
-        reply
-          .status(500)
-          .send({ message: 'Something went wrong. Contact developer for help.' });
+        const parts = episodeId.split('$');
+        try {
+          const data = await fetchEpisodeSources(parts[0], parts[2], false, parts[3]);
+          if (data != null) 
+          {
+            reply.status(200).send(data);  // Solo se envía la respuesta cuando tenemos los datos 
+          }else{
+            try {
+              const data = await fetchEpisodeSources(parts[0], parts[2], true, parts[3]);
+              if (data != null) 
+              {
+                reply.status(200).send(data);  // Solo se envía la respuesta cuando tenemos los datos 
+              }else{
+                reply.status(500).send({});
+              }
+            } catch (error) {
+              reply.status(500).send({ message: 'Something went wrong. Contact developer for help.' });
+            }
+          }
+        } catch (error) {
+          reply.status(500).send({ message: 'Something went wrong. Contact developer for help.' });
+        }
       }
-    },
-  );
+    };
+
+  fastify.get('/watch', watch);
+  fastify.get('/watch/:episodeId', watch);
+  fastify.get('/watch_aux', watch);
+  fastify.get('/watch_aux/:episodeId', watch);
 
   fastify.get('/genres', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -636,6 +722,90 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         .send({ message: 'Something went wrong. Contact developer for help.' });
     }
   });
+
+  const fetchEpisodeSources = async (animeEpisodeId: string, episodeId: string, raw : Boolean, category : string): Promise<any> => {    
+    try {
+      const ANIWATCH_API = process.env.ANIWATCH_API;
+      var response = null;
+      if (!raw) {
+        if ( category.includes("both") ) 
+        {
+          console.log("category.raw: ", category);            
+          category = category.replace(
+            "both",
+            "sub"            
+          );  
+          console.log("category.fix: ", category);
+        }        
+        const urlServers = `${ANIWATCH_API}/api/v2/hianime/episode/servers?animeEpisodeId=${animeEpisodeId}?ep=${episodeId}`;
+        const servers = await axios.get(urlServers);        
+        console.log("response.data: ", servers.data);             
+        if (servers.data != null && servers.data.data != null && servers.data.data[category] && servers.data.data[category].length > 0 ) {                
+          for (let i = 0; i < servers.data.data[category].length; i++) 
+          {
+            const element = servers.data.data[category][i];
+            if(element.serverName != null && element.serverName != "")
+            {
+              var url = `${ANIWATCH_API}/api/v2/hianime/episode/sources?animeEpisodeId=${animeEpisodeId}?ep=${episodeId}&server=${element.serverName}&category=${category}`;
+              console.log("axios.url: ", url);
+              response = await axios.get(url);
+              console.log("axios.response: ", response.data);
+              if (response.data.success && response.data.data != null && response.data.data.sources != null && response.data.data.sources.length > 0)     
+                break;                              
+            }                    
+          }          
+        }
+      }else{
+        // Crear la URL con los parámetros necesarios
+        const url = `${ANIWATCH_API}/api/v2/hianime/episode/sources?animeEpisodeId=${animeEpisodeId}?ep=${episodeId}&category=raw`;
+        // Hacer una solicitud GET a la URL
+        response = await axios.get(url);
+      }
+  
+      // Verificar si la respuesta es nula
+      if (response == null) 
+        return null;            
+
+      // Accedemos a response.data.data correctamente
+      const data = response.data.data;
+
+      // Verificar si las claves existen y asignar valores predeterminados
+      const sources = Array.isArray(data.sources) ? data.sources : [];
+      const subtitles = Array.isArray(data.tracks) ? data.tracks : [];
+      const introData = data.intro || {};  // Si intro existe, lo usamos
+      const outroData = data.outro || {};  // Lo mismo con outro    
+
+      // Extraer los parámetros de cada objeto en `sources`
+      const sourcesDetails = sources.map((source: any) => ({
+        url: source.url,  // Extraemos la URL
+        type: source.type,  // Tipo de fuente (puede ser 'hls', etc.)
+        quality: "AUTO",  // Calidad de la fuente
+        isM3U8: true  // Si es un archivo M3U8
+      }));
+
+      // Extraer los parámetros de cada objeto en `subtitles`
+      const subtitleDetails = subtitles
+        .filter((subtitle: any) => subtitle.label)  // Filtra para incluir solo los elementos con `label` definido
+        .map((subtitle: any) => ({
+          url: subtitle.file,  // Archivo de subtítulo
+          lang: subtitle.label.replace("CR_", "")   // Idioma del subtítulo (puede ser 'English', 'Spanish', etc.)
+        }));
+
+      // Crear el objeto final con todos los detalles extraídos
+      const obj = {
+        sources: sourcesDetails,  // Todos los detalles de las fuentes
+        subtitles: subtitleDetails,  // Todos los detalles de los subtítulos
+        intro: introData,  // URL de la intro
+        outro: outroData,  // URL del outro
+      };
+
+      return obj;  // Retornar el objeto con todos los detalles
+    } catch (error) {
+      console.error("Error (fetchEpisodeSources):", error);
+      return null;
+    }
+  };
+
 };
 
 export default routes;

@@ -12,6 +12,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   await fastify.register(animepahe, { prefix: '/animepahe' });
   await fastify.register(animeunity, { prefix: '/animeunity' });
   await fastify.register(hianime, { prefix: '/hianime' });
+  await fastify.register(hianime, { prefix: '/zoro' });
   await fastify.register(animekai, { prefix: '/animekai' });
   await fastify.register(animesaturn, { prefix: '/animesaturn' });
   await fastify.register(kickassanime, { prefix: '/kickassanime' });
