@@ -1,4 +1,4 @@
-import { pool } from '../db';
+import { readPool } from '../db';
 import { MediaTypeEnum } from './format';
 
 export interface CachedMedia {
@@ -58,15 +58,15 @@ const buildMediaResponse = (row: any): Record<string, any> => ({
 });
 
 export const findMediaById = async (id: number): Promise<CachedMedia | null> => {
-  if (!pool) return null;
+  if (!readPool) return null;
 
-  const { rows } = await pool.query('SELECT * FROM media WHERE id = $1', [id]);
+  const { rows } = await readPool.query('SELECT * FROM media WHERE id = $1', [id]);
   if (rows.length === 0) return null;
   const row = rows[0];
 
   const data = buildMediaResponse(row);
 
-  const { rows: characterRows } = await pool.query(
+  const { rows: characterRows } = await readPool.query(
     `SELECT c.*, mc.role
      FROM media_characters mc
      JOIN characters c ON c.id = mc.character_id
@@ -77,7 +77,7 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
   const voiceActorRows =
     row.media_type === 'ANIME'
       ? (
-          await pool.query(
+          await readPool.query(
             `SELECT mcva.character_id, mcva.language, va.*
              FROM media_character_voice_actors mcva
              JOIN voice_actors va ON va.id = mcva.voice_actor_id
@@ -116,7 +116,7 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
       })),
   }));
 
-  const { rows: relationRows } = await pool.query(
+  const { rows: relationRows } = await readPool.query(
     'SELECT * FROM media_relations WHERE media_id = $1',
     [id],
   );
@@ -129,7 +129,7 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
     type: r.snapshot_type ?? undefined,
   }));
 
-  const { rows: recommendationRows } = await pool.query(
+  const { rows: recommendationRows } = await readPool.query(
     'SELECT * FROM media_recommendations WHERE media_id = $1',
     [id],
   );
@@ -153,10 +153,10 @@ export const searchMedia = async (
   page = 1,
   perPage = 20,
 ): Promise<CachedMedia[]> => {
-  if (!pool) return [];
+  if (!readPool) return [];
 
   const offset = (Math.max(page, 1) - 1) * perPage;
-  const { rows } = await pool.query(
+  const { rows } = await readPool.query(
     `SELECT * FROM media
      WHERE media_type = $1
        AND (title_romaji ILIKE '%' || $2 || '%'

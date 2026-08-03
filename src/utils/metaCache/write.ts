@@ -1,6 +1,7 @@
+import { PoolClient } from 'pg';
 import { IAnimeInfo, IMangaInfo } from '@consumet/extensions/dist/models';
 
-import { pool } from '../db';
+import { writePool } from '../db';
 import { mediaTypeFromFormat, pickTitleText } from './format';
 
 type MediaLike = (IAnimeInfo | IMangaInfo) & {
@@ -8,10 +9,55 @@ type MediaLike = (IAnimeInfo | IMangaInfo) & {
   chapters?: unknown[];
 };
 
+// One multi-row INSERT instead of one query per row. `updateColumns: null`
+// means ON CONFLICT DO NOTHING (used for the pure link table, where
+// duplicate keys within the same batch are harmless); otherwise DO UPDATE.
+// Callers must de-duplicate rows by their conflict key beforehand — Postgres
+// rejects a DO UPDATE batch that would affect the same conflict target twice.
+const upsertBatch = async (
+  client: PoolClient,
+  table: string,
+  columns: string[],
+  conflictColumns: string[],
+  updateColumns: string[] | null,
+  rows: any[][],
+): Promise<void> => {
+  if (rows.length === 0) return;
+
+  const values: any[] = [];
+  const rowPlaceholders = rows.map((row) => {
+    const placeholders = row.map((value) => {
+      values.push(value);
+      return `$${values.length}`;
+    });
+    return `(${placeholders.join(',')})`;
+  });
+
+  const conflictClause = updateColumns
+    ? `ON CONFLICT (${conflictColumns.join(',')}) DO UPDATE SET ${updateColumns
+        .map((c) => `${c} = EXCLUDED.${c}`)
+        .join(', ')}`
+    : `ON CONFLICT (${conflictColumns.join(',')}) DO NOTHING`;
+
+  await client.query(
+    `INSERT INTO ${table} (${columns.join(',')}) VALUES ${rowPlaceholders.join(', ')} ${conflictClause}`,
+    values,
+  );
+};
+
+const dedupeById = (items: any[]): any[] => {
+  const map = new Map<number, any>();
+  for (const item of items) {
+    if (item?.id == null) continue;
+    map.set(Number(item.id), item);
+  }
+  return [...map.values()];
+};
+
 // Shared by /data/:id (anime) and /manga/info/:id: both call the same
 // AniList Media detail query under the hood, so a single row shape covers both.
 export const upsertMedia = async (info: MediaLike): Promise<void> => {
-  if (!pool) return;
+  if (!writePool) return;
 
   const id = Number(info.id);
   if (!Number.isFinite(id)) return;
@@ -27,7 +73,7 @@ export const upsertMedia = async (info: MediaLike): Promise<void> => {
   const manga = info as IMangaInfo;
   const title = typeof anime.title === 'object' ? anime.title : undefined;
 
-  const client = await pool.connect();
+  const client = await writePool.connect();
   try {
     await client.query('BEGIN');
 
@@ -126,135 +172,116 @@ export const upsertMedia = async (info: MediaLike): Promise<void> => {
       ],
     );
 
-    const characters = (info as { characters?: any[] }).characters;
-    if (Array.isArray(characters)) {
-      for (const character of characters) {
-        if (character?.id == null) continue;
-        const characterId = Number(character.id);
+    const rawCharacters = ((info as { characters?: any[] }).characters ?? []).filter(
+      (c) => c?.id != null,
+    );
+    const characters = dedupeById(rawCharacters);
 
-        await client.query(
-          `INSERT INTO characters (id, name_first, name_last, name_full, name_native, name_user_preferred, image, image_hash)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-           ON CONFLICT (id) DO UPDATE SET
-             name_first = EXCLUDED.name_first,
-             name_last = EXCLUDED.name_last,
-             name_full = EXCLUDED.name_full,
-             name_native = EXCLUDED.name_native,
-             name_user_preferred = EXCLUDED.name_user_preferred,
-             image = EXCLUDED.image,
-             image_hash = EXCLUDED.image_hash`,
-          [
-            characterId,
-            character.name?.first ?? null,
-            character.name?.last ?? null,
-            character.name?.full ?? null,
-            character.name?.native ?? null,
-            character.name?.userPreferred ?? null,
-            character.image ?? null,
-            character.imageHash ?? null,
-          ],
-        );
+    await upsertBatch(
+      client,
+      'characters',
+      ['id', 'name_first', 'name_last', 'name_full', 'name_native', 'name_user_preferred', 'image', 'image_hash'],
+      ['id'],
+      ['name_first', 'name_last', 'name_full', 'name_native', 'name_user_preferred', 'image', 'image_hash'],
+      characters.map((character) => [
+        Number(character.id),
+        character.name?.first ?? null,
+        character.name?.last ?? null,
+        character.name?.full ?? null,
+        character.name?.native ?? null,
+        character.name?.userPreferred ?? null,
+        character.image ?? null,
+        character.imageHash ?? null,
+      ]),
+    );
 
-        await client.query(
-          `INSERT INTO media_characters (media_id, character_id, role)
-           VALUES ($1,$2,$3)
-           ON CONFLICT (media_id, character_id) DO UPDATE SET role = EXCLUDED.role`,
-          [id, characterId, character.role ?? null],
-        );
+    await upsertBatch(
+      client,
+      'media_characters',
+      ['media_id', 'character_id', 'role'],
+      ['media_id', 'character_id'],
+      ['role'],
+      characters.map((character) => [id, Number(character.id), character.role ?? null]),
+    );
 
-        const voiceActors = character.voiceActors as Array<any> | undefined;
-        if (Array.isArray(voiceActors)) {
-          for (const voiceActor of voiceActors) {
-            if (voiceActor?.id == null) continue;
-            const voiceActorId = Number(voiceActor.id);
-
-            await client.query(
-              `INSERT INTO voice_actors (id, name_first, name_last, name_full, name_native, name_user_preferred, image, image_hash)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-               ON CONFLICT (id) DO UPDATE SET
-                 name_first = EXCLUDED.name_first,
-                 name_last = EXCLUDED.name_last,
-                 name_full = EXCLUDED.name_full,
-                 name_native = EXCLUDED.name_native,
-                 name_user_preferred = EXCLUDED.name_user_preferred,
-                 image = EXCLUDED.image,
-                 image_hash = EXCLUDED.image_hash`,
-              [
-                voiceActorId,
-                voiceActor.name?.first ?? null,
-                voiceActor.name?.last ?? null,
-                voiceActor.name?.full ?? null,
-                voiceActor.name?.native ?? null,
-                voiceActor.name?.userPreferred ?? null,
-                voiceActor.image ?? null,
-                voiceActor.imageHash ?? null,
-              ],
-            );
-
-            await client.query(
-              `INSERT INTO media_character_voice_actors (media_id, character_id, voice_actor_id, language)
-               VALUES ($1,$2,$3,$4)
-               ON CONFLICT (media_id, character_id, voice_actor_id, language) DO NOTHING`,
-              [id, characterId, voiceActorId, voiceActor.language ?? null],
-            );
-          }
-        }
+    const voiceActorLinks: any[][] = [];
+    const rawVoiceActors: any[] = [];
+    for (const character of rawCharacters) {
+      const voiceActors = character.voiceActors as any[] | undefined;
+      if (!Array.isArray(voiceActors)) continue;
+      for (const voiceActor of voiceActors) {
+        if (voiceActor?.id == null) continue;
+        rawVoiceActors.push(voiceActor);
+        voiceActorLinks.push([id, Number(character.id), Number(voiceActor.id), voiceActor.language ?? null]);
       }
     }
+    const voiceActors = dedupeById(rawVoiceActors);
 
-    const relations = anime.relations;
-    if (Array.isArray(relations)) {
-      for (const relation of relations) {
-        if (relation?.id == null) continue;
+    await upsertBatch(
+      client,
+      'voice_actors',
+      ['id', 'name_first', 'name_last', 'name_full', 'name_native', 'name_user_preferred', 'image', 'image_hash'],
+      ['id'],
+      ['name_first', 'name_last', 'name_full', 'name_native', 'name_user_preferred', 'image', 'image_hash'],
+      voiceActors.map((voiceActor) => [
+        Number(voiceActor.id),
+        voiceActor.name?.first ?? null,
+        voiceActor.name?.last ?? null,
+        voiceActor.name?.full ?? null,
+        voiceActor.name?.native ?? null,
+        voiceActor.name?.userPreferred ?? null,
+        voiceActor.image ?? null,
+        voiceActor.imageHash ?? null,
+      ]),
+    );
 
-        await client.query(
-          `INSERT INTO media_relations (media_id, related_media_id, relation_type, snapshot_title, snapshot_status, snapshot_image, snapshot_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (media_id, related_media_id) DO UPDATE SET
-             relation_type = EXCLUDED.relation_type,
-             snapshot_title = EXCLUDED.snapshot_title,
-             snapshot_status = EXCLUDED.snapshot_status,
-             snapshot_image = EXCLUDED.snapshot_image,
-             snapshot_type = EXCLUDED.snapshot_type`,
-          [
-            id,
-            Number(relation.id),
-            (relation as { relationType?: string }).relationType ?? null,
-            pickTitleText(relation.title),
-            relation.status ?? null,
-            relation.image ?? null,
-            relation.type ?? null,
-          ],
-        );
-      }
-    }
+    // Link rows can legitimately repeat the same (character, voice actor) if
+    // AniList's response ever duplicated an edge — DO NOTHING tolerates that
+    // within a single batch (unlike DO UPDATE, which Postgres rejects).
+    await upsertBatch(
+      client,
+      'media_character_voice_actors',
+      ['media_id', 'character_id', 'voice_actor_id', 'language'],
+      ['media_id', 'character_id', 'voice_actor_id', 'language'],
+      null,
+      voiceActorLinks,
+    );
 
-    const recommendations = anime.recommendations;
-    if (Array.isArray(recommendations)) {
-      for (const recommendation of recommendations) {
-        if (recommendation?.id == null) continue;
+    const relations = dedupeById(anime.relations ?? []);
+    await upsertBatch(
+      client,
+      'media_relations',
+      ['media_id', 'related_media_id', 'relation_type', 'snapshot_title', 'snapshot_status', 'snapshot_image', 'snapshot_type'],
+      ['media_id', 'related_media_id'],
+      ['relation_type', 'snapshot_title', 'snapshot_status', 'snapshot_image', 'snapshot_type'],
+      relations.map((relation) => [
+        id,
+        Number(relation.id),
+        (relation as { relationType?: string }).relationType ?? null,
+        pickTitleText(relation.title),
+        relation.status ?? null,
+        relation.image ?? null,
+        relation.type ?? null,
+      ]),
+    );
 
-        await client.query(
-          `INSERT INTO media_recommendations (media_id, recommended_media_id, rating, snapshot_title, snapshot_status, snapshot_image, snapshot_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (media_id, recommended_media_id) DO UPDATE SET
-             rating = EXCLUDED.rating,
-             snapshot_title = EXCLUDED.snapshot_title,
-             snapshot_status = EXCLUDED.snapshot_status,
-             snapshot_image = EXCLUDED.snapshot_image,
-             snapshot_type = EXCLUDED.snapshot_type`,
-          [
-            id,
-            Number(recommendation.id),
-            recommendation.rating ?? null,
-            pickTitleText(recommendation.title),
-            recommendation.status ?? null,
-            recommendation.image ?? null,
-            recommendation.type ?? null,
-          ],
-        );
-      }
-    }
+    const recommendations = dedupeById(anime.recommendations ?? []);
+    await upsertBatch(
+      client,
+      'media_recommendations',
+      ['media_id', 'recommended_media_id', 'rating', 'snapshot_title', 'snapshot_status', 'snapshot_image', 'snapshot_type'],
+      ['media_id', 'recommended_media_id'],
+      ['rating', 'snapshot_title', 'snapshot_status', 'snapshot_image', 'snapshot_type'],
+      recommendations.map((recommendation) => [
+        id,
+        Number(recommendation.id),
+        recommendation.rating ?? null,
+        pickTitleText(recommendation.title),
+        recommendation.status ?? null,
+        recommendation.image ?? null,
+        recommendation.type ?? null,
+      ]),
+    );
 
     await client.query('COMMIT');
   } catch (err) {
