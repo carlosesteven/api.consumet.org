@@ -2,6 +2,8 @@ import { FastifyRequest, FastifyReply, FastifyInstance, RegisterOptions } from '
 import { META } from '@consumet/extensions';
 import { PROVIDERS_LIST } from '@consumet/extensions';
 
+import { withPersistentFallback, withSearchFallback } from '../../utils/metaCache/fallback';
+
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   let anilist = new META.Anilist.Manga();
 
@@ -15,10 +17,23 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
 
   fastify.get('/:query', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = (request.params as { query: string }).query;
+    const page = (request.query as { page?: number }).page;
+    const perPage = (request.query as { perPage?: number }).perPage;
 
-    const res = await anilist.search(query);
+    try {
+      const res = await withSearchFallback({
+        mediaType: 'MANGA',
+        query,
+        page,
+        perPage,
+        redisKey: `anilist-manga:search;${query};${page};${perPage}`,
+        fetchLive: () => anilist.search(query, page, perPage),
+      });
 
-    reply.status(200).send(res);
+      reply.status(200).send(res);
+    } catch (err: any) {
+      reply.status(404).send({ message: err.message ?? 'Manga not found' });
+    }
   });
 
   fastify.get('/info/:id', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -36,16 +51,16 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       return reply.status(400).send({ message: 'id is required' });
 
     try {
-      const res = await anilist
-        .fetchMangaInfo(id)
-        .catch((err) => reply.status(404).send({ message: err }));
+      const res = await withPersistentFallback({
+        mediaId: Number(id),
+        redisKey: `anilist-manga:info;${id}`,
+        fetchLive: () => anilist.fetchMangaInfo(id),
+      });
 
       reply.status(200).send(res);
       anilist = new META.Anilist.Manga();
-    } catch (err) {
-      reply
-        .status(500)
-        .send({ message: 'Something went wrong. Please try again later.' });
+    } catch (err: any) {
+      reply.status(404).send({ message: err.message ?? 'Manga not found' });
     }
   });
 

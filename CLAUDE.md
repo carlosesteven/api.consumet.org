@@ -27,6 +27,7 @@ Copy `.env.example` to `.env`:
 | `PROXY` | HTTP proxy for provider requests |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis connection |
 | `REDIS_TTL` | Cache TTL in seconds (default: 3600) |
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | Postgres connection (persistent fallback cache for AniList meta, optional) |
 | `TMDB_KEY` | TMDB API key for movie/TV metadata |
 | `NODE_ENV` | Set to `DEMO` to enable session-gated access |
 

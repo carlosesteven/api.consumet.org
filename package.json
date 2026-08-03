@@ -26,6 +26,7 @@
         "@consumet/extensions": "github:carlosesteven/consumet.ts",
         "@fastify/cors": "^8.5.0",
         "@types/node": "^18.11.17",
+        "@types/pg": "^8.20.3",
         "@types/ws": "^8.5.3",
         "axios": "^1.0.0",
         "chalk": "4.1.2",
@@ -33,6 +34,7 @@
         "dotenv": "^16.0.3",
         "fastify": "^4.10.2",
         "ioredis": "^5.2.4",
+        "pg": "^8.22.0",
         "reconnecting-websocket": "^4.4.0",
         "ts-node": "^10.9.1",
         "ws": "^8.8.1"

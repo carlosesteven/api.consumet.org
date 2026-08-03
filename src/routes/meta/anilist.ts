@@ -6,6 +6,7 @@ import Anilist from '@consumet/extensions/dist/providers/meta/anilist';
 import { StreamingServers } from '@consumet/extensions/dist/models';
 
 import cache from '../../utils/cache';
+import { withPersistentFallback, withSearchFallback } from '../../utils/metaCache/fallback';
 import { redis } from '../../main';
 import Hianime from '@consumet/extensions/dist/providers/anime/hianime';
 import Providers from '../../utils/providers';
@@ -69,22 +70,41 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         if (!['WINTER', 'SPRING', 'SUMMER', 'FALL'].includes(season))
           return reply.status(400).send({ message: `${season} is not a valid season` });
 
-      const res = await anilist.advancedSearch(
-        query,
-        type,
-        page,
-        perPage,
-        format,
-        sort as string[],
-        genres as string[],
-        id,
-        year,
-        status,
-        season,
-        countryOfOrigin
-      );
+      const fetchLive = () =>
+        anilist.advancedSearch(
+          query,
+          type,
+          page,
+          perPage,
+          format,
+          sort as string[],
+          genres as string[],
+          id,
+          year,
+          status,
+          season,
+          countryOfOrigin,
+        );
 
-      reply.status(200).send(res);
+      try {
+        // Persistent fallback only applies to free-text search (query) — the
+        // filter-only browsing use case isn't in scope of the caching plan.
+        if (query) {
+          const res = await withSearchFallback({
+            mediaType: 'ANIME',
+            query,
+            page,
+            perPage,
+            redisKey: `anilist:advanced-search;${query};${type};${page};${perPage};${format};${JSON.stringify(sort)};${JSON.stringify(genres)};${id};${year};${status};${season};${countryOfOrigin}`,
+            fetchLive,
+          });
+          reply.status(200).send(res);
+        } else {
+          reply.status(200).send(await fetchLive());
+        }
+      } catch (err: any) {
+        reply.status(404).send({ message: err.message ?? 'Search failed' });
+      }
     },
   );
 
@@ -255,9 +275,18 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     const id = (request.params as { id: string }).id;
 
     const anilist = generateAnilistMeta();
-    const res = await anilist.fetchAnilistInfoById(id);
 
-    reply.status(200).send(res);
+    try {
+      const res = await withPersistentFallback({
+        mediaId: Number(id),
+        redisKey: `anilist:data;${id}`,
+        fetchLive: () => anilist.fetchAnilistInfoById(id),
+      });
+
+      reply.status(200).send(res);
+    } catch (err: any) {
+      reply.status(404).send({ message: err.message ?? 'Media not found' });
+    }
   });
 
   // anilist info with episodes
