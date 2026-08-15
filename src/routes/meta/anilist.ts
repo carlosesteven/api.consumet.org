@@ -99,21 +99,15 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       };
 
       try {
-        // Persistent fallback only applies to free-text search (query) — the
-        // filter-only browsing use case isn't in scope of the caching plan.
-        if (query) {
-          const res = await withSearchFallback({
-            mediaType: 'ANIME',
-            query,
-            page,
-            perPage,
-            redisKey: `anilist:advanced-search;${query};${type};${page};${perPage};${format};${JSON.stringify(sort)};${JSON.stringify(genres)};${id};${year};${status};${season};${countryOfOrigin}`,
-            fetchLive,
-          });
-          reply.status(200).send(res);
-        } else {
-          reply.status(200).send(await fetchLive());
-        }
+        const res = await withSearchFallback({
+          mediaType: 'ANIME',
+          query: query || undefined,
+          page,
+          perPage,
+          redisKey: `anilist:advanced-search;${query};${type};${page};${perPage};${format};${JSON.stringify(sort)};${JSON.stringify(genres)};${id};${year};${status};${season};${countryOfOrigin}`,
+          fetchLive,
+        });
+        reply.status(200).send(res);
       } catch (err: any) {
         reply.status(404).send({ message: err.message ?? 'Search failed' });
       }

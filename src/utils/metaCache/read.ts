@@ -166,23 +166,37 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
 // AniList's advancedSearch normally returns.
 export const searchMedia = async (
   mediaType: MediaTypeEnum,
-  query: string,
+  query: string | undefined,
   page = 1,
   perPage = 20,
 ): Promise<SearchResult> => {
   if (!readPool) return { totalResults: 0, items: [] };
 
   const offset = (Math.max(page, 1) - 1) * perPage;
-  const { rows } = await readPool.query(
-    `SELECT *, COUNT(*) OVER() AS total_count FROM media
-     WHERE media_type = $1
-       AND (title_romaji ILIKE '%' || $2 || '%'
-            OR title_english ILIKE '%' || $2 || '%'
-            OR title_native ILIKE '%' || $2 || '%')
-     ORDER BY popularity DESC NULLS LAST
-     LIMIT $3 OFFSET $4`,
-    [mediaType, query, perPage, offset],
-  );
+
+  // No free-text query: this is a filter-only/browse request (e.g. a
+  // directory screen with no search term). Fall back to whatever's cached
+  // from the current year instead of "most popular ever" — cheap, and
+  // production already has a large chunk of the catalog mapped.
+  const { rows } = query
+    ? await readPool.query(
+        `SELECT *, COUNT(*) OVER() AS total_count FROM media
+         WHERE media_type = $1
+           AND (title_romaji ILIKE '%' || $2 || '%'
+                OR title_english ILIKE '%' || $2 || '%'
+                OR title_native ILIKE '%' || $2 || '%')
+         ORDER BY popularity DESC NULLS LAST
+         LIMIT $3 OFFSET $4`,
+        [mediaType, query, perPage, offset],
+      )
+    : await readPool.query(
+        `SELECT *, COUNT(*) OVER() AS total_count FROM media
+         WHERE media_type = $1
+           AND start_year = $2
+         ORDER BY popularity DESC NULLS LAST
+         LIMIT $3 OFFSET $4`,
+        [mediaType, new Date().getFullYear(), perPage, offset],
+      );
 
   const totalResults = rows.length > 0 ? Number(rows[0].total_count) : 0;
   const items = rows.map((row: any) => ({ cachedAt: row.updated_at, data: buildMediaResponse(row) }));

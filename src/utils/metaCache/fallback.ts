@@ -64,7 +64,7 @@ export const withPersistentFallback = async <T extends IAnimeInfo | IMangaInfo>(
 
 interface SearchFallbackOptions<T> {
   mediaType: MediaTypeEnum;
-  query: string;
+  query?: string;
   page?: number;
   perPage?: number;
   redisKey: string;
@@ -94,8 +94,11 @@ export const withSearchFallback = async <T>(
     live = await opts.fetchLive();
   } catch (err) {
     try {
-      const page = opts.page ?? 1;
-      const perPage = opts.perPage ?? 20;
+      // Fastify leaves querystring numbers as strings unless a schema coerces
+      // them — normalize here so currentPage/hasNextPage match AniList's own
+      // (numeric) response shape instead of leaking a stringly-typed page.
+      const page = Number(opts.page) || 1;
+      const perPage = Number(opts.perPage) || 20;
       const { totalResults, items } = await searchMedia(opts.mediaType, opts.query, page, perPage);
       if (items.length > 0) {
         // Same shape AniList's advancedSearch/search return on a real success
