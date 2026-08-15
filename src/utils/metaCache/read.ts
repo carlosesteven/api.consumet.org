@@ -6,55 +6,69 @@ export interface CachedMedia {
   data: Record<string, any>;
 }
 
+export interface SearchResult {
+  totalResults: number;
+  items: CachedMedia[];
+}
+
+// Every key here uses `?? null`, never `?? undefined`. A JSON.stringify drops
+// `undefined` keys entirely, and at least one real consumer (the Android app,
+// via org.json's JSONObject.getString) throws on a *missing* key but handles
+// an explicit `null` gracefully (it coerces to the literal string "null").
+// Omitting a key silently breaks that client; `null` does not.
 const buildMediaResponse = (row: any): Record<string, any> => ({
   id: String(row.id),
-  malId: row.mal_id ?? undefined,
+  malId: row.mal_id ?? null,
   title: {
-    romaji: row.title_romaji ?? undefined,
-    english: row.title_english ?? undefined,
-    native: row.title_native ?? undefined,
-    userPreferred: row.title_user_preferred ?? undefined,
+    romaji: row.title_romaji ?? null,
+    english: row.title_english ?? null,
+    native: row.title_native ?? null,
+    userPreferred: row.title_user_preferred ?? null,
   },
-  synonyms: row.synonyms ?? undefined,
-  description: row.description ?? undefined,
-  status: row.status ?? undefined,
-  genres: row.genres ?? undefined,
-  studios: row.studios ?? undefined,
-  season: row.season ?? undefined,
-  countryOfOrigin: row.country_of_origin ?? undefined,
-  isAdult: row.is_adult ?? undefined,
-  isLicensed: row.is_licensed ?? undefined,
-  type: row.format ?? undefined,
-  duration: row.duration ?? undefined,
-  rating: row.rating ?? undefined,
-  popularity: row.popularity ?? undefined,
-  color: row.color ?? undefined,
-  image: row.image ?? undefined,
-  imageHash: row.image_hash ?? undefined,
-  cover: row.cover ?? undefined,
-  coverHash: row.cover_hash ?? undefined,
+  synonyms: row.synonyms ?? null,
+  description: row.description ?? null,
+  status: row.status ?? null,
+  genres: row.genres ?? null,
+  studios: row.studios ?? null,
+  season: row.season ?? null,
+  countryOfOrigin: row.country_of_origin ?? null,
+  isAdult: row.is_adult ?? null,
+  isLicensed: row.is_licensed ?? null,
+  type: row.format ?? null,
+  // Matches the library's `releaseDate: item?.seasonYear ?? item.startDate?.year`
+  // for advancedSearch results — some real consumers read this key directly
+  // and throw if it's absent (see zoroDirectory/zoroSearch in the Android app).
+  releaseDate: row.start_year ?? null,
+  duration: row.duration ?? null,
+  rating: row.rating ?? null,
+  popularity: row.popularity ?? null,
+  color: row.color ?? null,
+  image: row.image ?? null,
+  imageHash: row.image_hash ?? null,
+  cover: row.cover ?? null,
+  coverHash: row.cover_hash ?? null,
   startDate: {
-    year: row.start_year ?? undefined,
-    month: row.start_month ?? undefined,
-    day: row.start_day ?? undefined,
+    year: row.start_year ?? null,
+    month: row.start_month ?? null,
+    day: row.start_day ?? null,
   },
   endDate: {
-    year: row.end_year ?? undefined,
-    month: row.end_month ?? undefined,
-    day: row.end_day ?? undefined,
+    year: row.end_year ?? null,
+    month: row.end_month ?? null,
+    day: row.end_day ?? null,
   },
   trailer: row.trailer_id
     ? {
         id: row.trailer_id,
-        site: row.trailer_site ?? undefined,
-        thumbnail: row.trailer_thumbnail ?? undefined,
-        thumbnailHash: row.trailer_thumbnail_hash ?? undefined,
+        site: row.trailer_site ?? null,
+        thumbnail: row.trailer_thumbnail ?? null,
+        thumbnailHash: row.trailer_thumbnail_hash ?? null,
       }
-    : undefined,
-  totalEpisodes: row.total_episodes ?? undefined,
-  currentEpisode: row.current_episode ?? undefined,
-  nextAiringEpisode: row.next_airing_episode ?? undefined,
-  totalChapters: row.total_chapters ?? undefined,
+    : null,
+  totalEpisodes: row.total_episodes ?? null,
+  currentEpisode: row.current_episode ?? null,
+  nextAiringEpisode: row.next_airing_episode ?? null,
+  totalChapters: row.total_chapters ?? null,
 });
 
 export const findMediaById = async (id: number): Promise<CachedMedia | null> => {
@@ -89,30 +103,30 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
 
   data.characters = characterRows.map((c: any) => ({
     id: c.id,
-    role: c.role ?? undefined,
+    role: c.role ?? null,
     name: {
-      first: c.name_first ?? undefined,
-      last: c.name_last ?? undefined,
-      full: c.name_full ?? undefined,
-      native: c.name_native ?? undefined,
-      userPreferred: c.name_user_preferred ?? undefined,
+      first: c.name_first ?? null,
+      last: c.name_last ?? null,
+      full: c.name_full ?? null,
+      native: c.name_native ?? null,
+      userPreferred: c.name_user_preferred ?? null,
     },
-    image: c.image ?? undefined,
-    imageHash: c.image_hash ?? undefined,
+    image: c.image ?? null,
+    imageHash: c.image_hash ?? null,
     voiceActors: voiceActorRows
       .filter((va: any) => va.character_id === c.id)
       .map((va: any) => ({
         id: va.id,
-        language: va.language ?? undefined,
+        language: va.language ?? null,
         name: {
-          first: va.name_first ?? undefined,
-          last: va.name_last ?? undefined,
-          full: va.name_full ?? undefined,
-          native: va.name_native ?? undefined,
-          userPreferred: va.name_user_preferred ?? undefined,
+          first: va.name_first ?? null,
+          last: va.name_last ?? null,
+          full: va.name_full ?? null,
+          native: va.name_native ?? null,
+          userPreferred: va.name_user_preferred ?? null,
         },
-        image: va.image ?? undefined,
-        imageHash: va.image_hash ?? undefined,
+        image: va.image ?? null,
+        imageHash: va.image_hash ?? null,
       })),
   }));
 
@@ -122,11 +136,11 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
   );
   data.relations = relationRows.map((r: any) => ({
     id: r.related_media_id,
-    relationType: r.relation_type ?? undefined,
-    title: r.snapshot_title ?? undefined,
-    status: r.snapshot_status ?? undefined,
-    image: r.snapshot_image ?? undefined,
-    type: r.snapshot_type ?? undefined,
+    relationType: r.relation_type ?? null,
+    title: r.snapshot_title ?? null,
+    status: r.snapshot_status ?? null,
+    image: r.snapshot_image ?? null,
+    type: r.snapshot_type ?? null,
   }));
 
   const { rows: recommendationRows } = await readPool.query(
@@ -135,11 +149,11 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
   );
   data.recommendations = recommendationRows.map((r: any) => ({
     id: r.recommended_media_id,
-    rating: r.rating ?? undefined,
-    title: r.snapshot_title ?? undefined,
-    status: r.snapshot_status ?? undefined,
-    image: r.snapshot_image ?? undefined,
-    type: r.snapshot_type ?? undefined,
+    rating: r.rating ?? null,
+    title: r.snapshot_title ?? null,
+    status: r.snapshot_status ?? null,
+    image: r.snapshot_image ?? null,
+    type: r.snapshot_type ?? null,
   }));
 
   return { cachedAt: row.updated_at, data };
@@ -147,17 +161,20 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
 
 // Only searches what already got persisted via findMediaById's write path
 // (/data/:id, /manga/info/:id) — not a replica of AniList's full catalog.
+// COUNT(*) OVER() rides along with the same query so callers can rebuild the
+// same pagination shape (currentPage/totalPages/totalResults/hasNextPage)
+// AniList's advancedSearch normally returns.
 export const searchMedia = async (
   mediaType: MediaTypeEnum,
   query: string,
   page = 1,
   perPage = 20,
-): Promise<CachedMedia[]> => {
-  if (!readPool) return [];
+): Promise<SearchResult> => {
+  if (!readPool) return { totalResults: 0, items: [] };
 
   const offset = (Math.max(page, 1) - 1) * perPage;
   const { rows } = await readPool.query(
-    `SELECT * FROM media
+    `SELECT *, COUNT(*) OVER() AS total_count FROM media
      WHERE media_type = $1
        AND (title_romaji ILIKE '%' || $2 || '%'
             OR title_english ILIKE '%' || $2 || '%'
@@ -167,5 +184,8 @@ export const searchMedia = async (
     [mediaType, query, perPage, offset],
   );
 
-  return rows.map((row: any) => ({ cachedAt: row.updated_at, data: buildMediaResponse(row) }));
+  const totalResults = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  const items = rows.map((row: any) => ({ cachedAt: row.updated_at, data: buildMediaResponse(row) }));
+
+  return { totalResults, items };
 };

@@ -70,8 +70,8 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         if (!['WINTER', 'SPRING', 'SUMMER', 'FALL'].includes(season))
           return reply.status(400).send({ message: `${season} is not a valid season` });
 
-      const fetchLive = () =>
-        anilist.advancedSearch(
+      const fetchLive = async () => {
+        const res = await anilist.advancedSearch(
           query,
           type,
           page,
@@ -85,6 +85,18 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
           season,
           countryOfOrigin,
         );
+
+        // advancedSearch swallows non-5xx AniList failures (e.g. the 403
+        // "temporarily disabled" response) and resolves with an empty page
+        // instead of throwing. A real empty search still reports totalResults
+        // as 0; only a masked failure leaves it undefined. Treat that as a
+        // failure so the fallback below actually gets a chance to run.
+        if (res.totalResults === undefined) {
+          throw new Error('AniList advancedSearch returned no data (likely down)');
+        }
+
+        return res;
+      };
 
       try {
         // Persistent fallback only applies to free-text search (query) — the

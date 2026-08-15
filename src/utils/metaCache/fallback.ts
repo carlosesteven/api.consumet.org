@@ -79,7 +79,7 @@ interface SearchFallbackOptions<T> {
 // Same hard rule as withPersistentFallback above.
 export const withSearchFallback = async <T>(
   opts: SearchFallbackOptions<T>,
-): Promise<T | { results: Record<string, any>[]; stale: true }> => {
+): Promise<T | Record<string, any>> => {
   if (redis) {
     try {
       const cached = await cache.get<T>(redis, opts.redisKey);
@@ -94,10 +94,21 @@ export const withSearchFallback = async <T>(
     live = await opts.fetchLive();
   } catch (err) {
     try {
-      const cachedResults = await searchMedia(opts.mediaType, opts.query, opts.page, opts.perPage);
-      if (cachedResults.length > 0) {
+      const page = opts.page ?? 1;
+      const perPage = opts.perPage ?? 20;
+      const { totalResults, items } = await searchMedia(opts.mediaType, opts.query, page, perPage);
+      if (items.length > 0) {
+        // Same shape AniList's advancedSearch/search return on a real success
+        // (currentPage/hasNextPage/totalPages/totalResults/results) — callers
+        // that already parse that shape don't need special-case handling for
+        // the fallback path.
+        const totalPages = perPage > 0 ? Math.ceil(totalResults / perPage) : 0;
         return {
-          results: cachedResults.map((c) => ({ ...c.data, stale: true, cachedAt: c.cachedAt })),
+          currentPage: page,
+          hasNextPage: page < totalPages,
+          totalPages,
+          totalResults,
+          results: items.map((c) => ({ ...c.data, stale: true, cachedAt: c.cachedAt })),
           stale: true,
         };
       }
