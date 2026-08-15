@@ -159,6 +159,17 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
   return { cachedAt: row.updated_at, data };
 };
 
+export interface SearchFilters {
+  query?: string;
+  genres?: string[];
+  format?: string;
+  // Already translated to media.status's stored value (see
+  // mapRawStatusToMediaStatus in format.ts) — this function doesn't map it.
+  status?: string;
+  season?: string;
+  year?: number;
+}
+
 // Only searches what already got persisted via findMediaById's write path
 // (/data/:id, /manga/info/:id) — not a replica of AniList's full catalog.
 // COUNT(*) OVER() rides along with the same query so callers can rebuild the
@@ -166,7 +177,7 @@ export const findMediaById = async (id: number): Promise<CachedMedia | null> => 
 // AniList's advancedSearch normally returns.
 export const searchMedia = async (
   mediaType: MediaTypeEnum,
-  query: string | undefined,
+  filters: SearchFilters,
   page = 1,
   perPage = 20,
 ): Promise<SearchResult> => {
@@ -174,29 +185,59 @@ export const searchMedia = async (
 
   const offset = (Math.max(page, 1) - 1) * perPage;
 
-  // No free-text query: this is a filter-only/browse request (e.g. a
-  // directory screen with no search term). Fall back to whatever's cached
-  // from the current year instead of "most popular ever" — cheap, and
-  // production already has a large chunk of the catalog mapped.
-  const { rows } = query
-    ? await readPool.query(
-        `SELECT *, COUNT(*) OVER() AS total_count FROM media
-         WHERE media_type = $1
-           AND (title_romaji ILIKE '%' || $2 || '%'
-                OR title_english ILIKE '%' || $2 || '%'
-                OR title_native ILIKE '%' || $2 || '%')
-         ORDER BY popularity DESC NULLS LAST
-         LIMIT $3 OFFSET $4`,
-        [mediaType, query, perPage, offset],
-      )
-    : await readPool.query(
-        `SELECT *, COUNT(*) OVER() AS total_count FROM media
-         WHERE media_type = $1
-           AND start_year = $2
-         ORDER BY popularity DESC NULLS LAST
-         LIMIT $3 OFFSET $4`,
-        [mediaType, new Date().getFullYear(), perPage, offset],
-      );
+  const conditions: string[] = ['media_type = $1'];
+  const params: any[] = [mediaType];
+
+  if (filters.query) {
+    params.push(filters.query);
+    const p = params.length;
+    conditions.push(
+      `(title_romaji ILIKE '%' || $${p} || '%' OR title_english ILIKE '%' || $${p} || '%' OR title_native ILIKE '%' || $${p} || '%')`,
+    );
+  }
+
+  if (filters.genres && filters.genres.length > 0) {
+    params.push(filters.genres);
+    conditions.push(`genres && $${params.length}::text[]`);
+  }
+
+  if (filters.format) {
+    params.push(filters.format);
+    conditions.push(`format = $${params.length}`);
+  }
+
+  if (filters.status) {
+    params.push(filters.status);
+    conditions.push(`status = $${params.length}`);
+  }
+
+  if (filters.season) {
+    params.push(filters.season);
+    conditions.push(`season = $${params.length}`);
+  }
+
+  // No free-text query and no explicit year: this is a filter-only/browse
+  // request (e.g. a directory screen). Default to the current year instead
+  // of "most popular ever" — cheap, and production already has a large
+  // chunk of the catalog mapped. A free-text query searches across all years.
+  const year = filters.year ?? (filters.query ? undefined : new Date().getFullYear());
+  if (year) {
+    params.push(year);
+    conditions.push(`start_year = $${params.length}`);
+  }
+
+  params.push(perPage);
+  const perPageIndex = params.length;
+  params.push(offset);
+  const offsetIndex = params.length;
+
+  const { rows } = await readPool.query(
+    `SELECT *, COUNT(*) OVER() AS total_count FROM media
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY popularity DESC NULLS LAST
+     LIMIT $${perPageIndex} OFFSET $${offsetIndex}`,
+    params,
+  );
 
   const totalResults = rows.length > 0 ? Number(rows[0].total_count) : 0;
   const items = rows.map((row: any) => ({ cachedAt: row.updated_at, data: buildMediaResponse(row) }));

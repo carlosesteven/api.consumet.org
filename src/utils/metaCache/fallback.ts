@@ -65,6 +65,13 @@ export const withPersistentFallback = async <T extends IAnimeInfo | IMangaInfo>(
 interface SearchFallbackOptions<T> {
   mediaType: MediaTypeEnum;
   query?: string;
+  genres?: string[];
+  format?: string;
+  // Already translated to media.status's stored value — see
+  // mapRawStatusToMediaStatus in format.ts, applied by the caller.
+  status?: string;
+  season?: string;
+  year?: number;
   page?: number;
   perPage?: number;
   redisKey: string;
@@ -99,7 +106,19 @@ export const withSearchFallback = async <T>(
       // (numeric) response shape instead of leaking a stringly-typed page.
       const page = Number(opts.page) || 1;
       const perPage = Number(opts.perPage) || 20;
-      const { totalResults, items } = await searchMedia(opts.mediaType, opts.query, page, perPage);
+      const { totalResults, items } = await searchMedia(
+        opts.mediaType,
+        {
+          query: opts.query,
+          genres: opts.genres,
+          format: opts.format,
+          status: opts.status,
+          season: opts.season,
+          year: opts.year,
+        },
+        page,
+        perPage,
+      );
       if (items.length > 0) {
         // Same shape AniList's advancedSearch/search return on a real success
         // (currentPage/hasNextPage/totalPages/totalResults/results) — callers

@@ -7,6 +7,7 @@ import { StreamingServers } from '@consumet/extensions/dist/models';
 
 import cache from '../../utils/cache';
 import { withPersistentFallback, withSearchFallback } from '../../utils/metaCache/fallback';
+import { mapRawStatusToMediaStatus } from '../../utils/metaCache/format';
 import { redis } from '../../main';
 import Hianime from '@consumet/extensions/dist/providers/anime/hianime';
 import Providers from '../../utils/providers';
@@ -102,6 +103,11 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
         const res = await withSearchFallback({
           mediaType: 'ANIME',
           query: query || undefined,
+          genres: (genres as string[]) || undefined,
+          format: format || undefined,
+          status: mapRawStatusToMediaStatus(status),
+          season: season || undefined,
+          year: Number(year) || undefined,
           page,
           perPage,
           redisKey: `anilist:advanced-search;${query};${type};${page};${perPage};${format};${JSON.stringify(sort)};${JSON.stringify(genres)};${id};${year};${status};${season};${countryOfOrigin}`,
